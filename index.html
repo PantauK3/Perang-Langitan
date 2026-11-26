@@ -52,27 +52,105 @@
   const W = 360;
   const H = 640;
 
-  // Mencegah duri lancip pada garis tepi huruf
   ctx.lineJoin = 'round';
   ctx.miterLimit = 2;
 
-  // --- MEMUAT GAMBAR MENU ASLI ---
+  // --- MEMUAT GAMBAR MENU & SPRITE SHEET ---
   const menuImg = new Image();
   let menuImgLoaded = false;
   menuImg.onload = () => { menuImgLoaded = true; };
   menuImg.src = 'menu.png';
+
+  const rawSpriteImg = new Image();
+  let spriteSheet = null; // Canvas transparan hasil pembersihan latar putih
+
+  rawSpriteImg.onload = () => {
+    // Otomatis hapus latar putih dari pinggir gambar agar detail putih di dalam pesawat tetap utuh
+    const off = document.createElement('canvas');
+    off.width = rawSpriteImg.width;
+    off.height = rawSpriteImg.height;
+    const octx = off.getContext('2d');
+    octx.drawImage(rawSpriteImg, 0, 0);
+
+    const imgData = octx.getImageData(0, 0, off.width, off.height);
+    const d = imgData.data;
+    const w = off.width;
+    const h = off.height;
+    const visited = new Uint8Array(w * h);
+    const stack = [0, w - 1, (h - 1) * w, h * w - 1];
+
+    while (stack.length > 0) {
+      const idx = stack.pop();
+      if (idx < 0 || idx >= w * h || visited[idx]) continue;
+      visited[idx] = 1;
+      const p = idx * 4;
+      if (d[p] > 235 && d[p + 1] > 235 && d[p + 2] > 235) {
+        d[p + 3] = 0; // Jadikan transparan
+        const x = idx % w;
+        const y = (idx - x) / w;
+        if (x > 0) stack.push(idx - 1);
+        if (x < w - 1) stack.push(idx + 1);
+        if (y > 0) stack.push(idx - w);
+        if (y < h - 1) stack.push(idx + w);
+      }
+    }
+    octx.putImageData(imgData, 0, 0);
+    spriteSheet = off;
+  };
+  rawSpriteImg.src = 'sprites.png';
+
+  // Koordinat potongan (persentase lebar & tinggi gambar sprites.png)
+  const SPRITES = {
+    player:   { x: 0.015, y: 0.008, w: 0.355, h: 0.315 },
+    enGreen:  { x: 0.375, y: 0.015, w: 0.130, h: 0.105 },
+    enYellow: { x: 0.510, y: 0.015, w: 0.115, h: 0.105 },
+    enStealth:{ x: 0.625, y: 0.015, w: 0.105, h: 0.105 },
+    enBat:    { x: 0.545, y: 0.345, w: 0.155, h: 0.095 },
+    enUfo:    { x: 0.840, y: 0.330, w: 0.155, h: 0.115 },
+    boss:     { x: 0.728, y: 0.015, w: 0.265, h: 0.310 },
+    boltBlue: { x: 0.045, y: 0.455, w: 0.032, h: 0.065 },
+    boltRed:  { x: 0.048, y: 0.530, w: 0.032, h: 0.065 },
+    missile:  { x: 0.678, y: 0.450, w: 0.042, h: 0.110 },
+    powS:     { x: 0.445, y: 0.640, w: 0.070, h: 0.075 },
+    powH:     { x: 0.515, y: 0.640, w: 0.072, h: 0.075 },
+    powB:     { x: 0.592, y: 0.640, w: 0.068, h: 0.072 },
+    powP:     { x: 0.685, y: 0.640, w: 0.068, h: 0.072 },
+    exp0:     { x: 0.008, y: 0.720, w: 0.105, h: 0.105 },
+    exp1:     { x: 0.115, y: 0.720, w: 0.115, h: 0.105 },
+    exp2:     { x: 0.232, y: 0.720, w: 0.115, h: 0.105 },
+    exp3:     { x: 0.348, y: 0.720, w: 0.110, h: 0.105 },
+    exp4:     { x: 0.460, y: 0.720, w: 0.125, h: 0.115 }
+  };
+
+  function drawSprite(key, x, y, drawW, drawH, flipVertical = false) {
+    if (!spriteSheet) return false;
+    const s = SPRITES[key];
+    if (!s) return false;
+    ctx.save();
+    ctx.translate(Math.round(x), Math.round(y));
+    if (flipVertical) ctx.rotate(Math.PI);
+    ctx.drawImage(
+      spriteSheet,
+      s.x * spriteSheet.width,
+      s.y * spriteSheet.height,
+      s.w * spriteSheet.width,
+      s.h * spriteSheet.height,
+      -drawW / 2,
+      -drawH / 2,
+      drawW,
+      drawH
+    );
+    ctx.restore();
+    return true;
+  }
 
   // --- AUDIO RETRO (WEB AUDIO API) ---
   let audioCtx = null;
   let soundEnabled = true;
 
   function initAudio() {
-    if (!audioCtx) {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
   }
 
   function playTone(freq, type, duration, vol = 0.12, slideFreq = null) {
@@ -83,9 +161,7 @@
       const gain = audioCtx.createGain();
       osc.type = type;
       osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-      if (slideFreq) {
-        osc.frequency.exponentialRampToValueAtTime(slideFreq, audioCtx.currentTime + duration);
-      }
+      if (slideFreq) osc.frequency.exponentialRampToValueAtTime(slideFreq, audioCtx.currentTime + duration);
       gain.gain.setValueAtTime(vol, audioCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
       osc.connect(gain);
@@ -143,14 +219,13 @@
   let bullets = [];
   let enemyBullets = [];
   let enemies = [];
-  let particles = [];
+  let explosions = [];
   let powerups = [];
   let clouds = [];
   let islands = [];
   let boss = null;
   let enemiesDefeatedInLevel = 0;
 
-  // Area tombol sesuai posisi pada menu.png (skala 360x640)
   const menuHitboxes = [
     { id: 'START', x: 58, y: 318, w: 244, h: 52 },
     { id: 'SETTINGS', x: 80, y: 374, w: 200, h: 38 },
@@ -280,7 +355,7 @@
     bullets = [];
     enemyBullets = [];
     enemies = [];
-    particles = [];
+    explosions = [];
     powerups = [];
     boss = null;
 
@@ -311,121 +386,16 @@
     enemyBullets = [];
     enemies.forEach(en => {
       en.hp -= 120;
-      spawnExplosion(en.x, en.y, '#ffcc00', 14);
+      spawnExplosion(en.x, en.y, 44);
     });
     if (boss) {
       boss.hp -= 180;
-      spawnExplosion(boss.x, boss.y, '#ff6600', 22);
+      spawnExplosion(boss.x, boss.y, 68);
     }
   }
 
-  function spawnExplosion(x, y, color = '#ffaa00', count = 12) {
-    for (let i = 0; i < count; i++) {
-      const ang = Math.random() * Math.PI * 2;
-      const spd = 1 + Math.random() * 3.5;
-      particles.push({
-        x, y,
-        vx: Math.cos(ang) * spd,
-        vy: Math.sin(ang) * spd,
-        life: 18 + Math.random() * 14,
-        color: i % 2 === 0 ? color : '#ffffff',
-        size: 3 + Math.random() * 3
-      });
-    }
-  }
-
-  // --- MENGGAMBAR PESAWAT PIXEL ART DETAIL (SAAT BERMAIN) ---
-  function drawDetailedJet(x, y, scale = 1, isPlayer = true) {
-    ctx.save();
-    ctx.translate(Math.round(x), Math.round(y));
-    ctx.scale(scale, scale);
-
-    // Api pendorong
-    const flameH = 9 + Math.sin(frame * 0.7) * 4;
-    ctx.fillStyle = '#ea580c';
-    ctx.fillRect(-8, 13, 5, flameH);
-    ctx.fillRect(3, 13, 5, flameH);
-    ctx.fillStyle = '#fde047';
-    ctx.fillRect(-7, 13, 3, flameH * 0.65);
-    ctx.fillRect(4, 13, 3, flameH * 0.65);
-
-    // Bayangan sayap & garis tepi gelap
-    ctx.fillStyle = '#0f172a';
-    ctx.beginPath();
-    ctx.moveTo(0, -13);
-    ctx.lineTo(26, 8);
-    ctx.lineTo(26, 15);
-    ctx.lineTo(12, 13);
-    ctx.lineTo(13, 18);
-    ctx.lineTo(-13, 18);
-    ctx.lineTo(-12, 13);
-    ctx.lineTo(-26, 15);
-    ctx.lineTo(-26, 8);
-    ctx.closePath();
-    ctx.fill();
-
-    // Sayap utama
-    ctx.fillStyle = isPlayer ? '#cbd5e1' : '#64748b';
-    ctx.beginPath();
-    ctx.moveTo(0, -11);
-    ctx.lineTo(24, 8);
-    ctx.lineTo(24, 13);
-    ctx.lineTo(6, 10);
-    ctx.lineTo(-6, 10);
-    ctx.lineTo(-24, 13);
-    ctx.lineTo(-24, 8);
-    ctx.closePath();
-    ctx.fill();
-
-    // Ujung sayap merah/oranye
-    ctx.fillStyle = isPlayer ? '#dc2626' : '#f59e0b';
-    ctx.fillRect(-24, 8, 5, 5);
-    ctx.fillRect(19, 8, 5, 5);
-
-    // Rudal di bawah sayap
-    ctx.fillStyle = '#475569';
-    ctx.fillRect(-15, 4, 3, 10);
-    ctx.fillRect(12, 4, 3, 10);
-
-    // Sayap ekor
-    ctx.fillStyle = isPlayer ? '#94a3b8' : '#475569';
-    ctx.fillRect(-11, 12, 22, 5);
-
-    // Badan pesawat & intake mesin
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(-8, -8, 16, 23);
-    ctx.fillStyle = isPlayer ? '#f1f5f9' : '#94a3b8';
-    ctx.fillRect(-5, -21, 10, 35);
-    ctx.fillStyle = isPlayer ? '#cbd5e1' : '#64748b';
-    ctx.fillRect(-7, -6, 14, 19);
-
-    // Hidung pesawat
-    ctx.fillStyle = isPlayer ? '#334155' : '#1e293b';
-    ctx.beginPath();
-    ctx.moveTo(0, -27);
-    ctx.lineTo(5, -19);
-    ctx.lineTo(-5, -19);
-    ctx.closePath();
-    ctx.fill();
-
-    // Kokpit kaca biru mengkilap
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(-4, -15, 8, 12);
-    ctx.fillStyle = isPlayer ? '#0284c7' : '#dc2626';
-    ctx.fillRect(-3, -14, 6, 10);
-    ctx.fillStyle = '#bae6fd';
-    ctx.fillRect(-2, -13, 2, 5);
-
-    // Perisai jika aktif
-    if (isPlayer && player.shield > 0) {
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.arc(0, 0, 29 + Math.sin(frame * 0.2) * 2, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    ctx.restore();
+  function spawnExplosion(x, y, size = 42) {
+    explosions.push({ x, y, size, timer: 0, maxTimer: 20 });
   }
 
   function drawBevelBox(x, y, w, h, bgTop, bgBot, borderCol) {
@@ -455,12 +425,11 @@
     ctx.restore();
   }
 
-  // --- RENDER MENU UTAMA (MENGGUNAKAN GAMBAR ASLI menu.png) ---
+  // --- RENDER MENU UTAMA ---
   function renderMenu() {
     if (menuImgLoaded) {
       ctx.drawImage(menuImg, 0, 0, W, H);
 
-      // Perbarui angka HIGH SCORE & BEST LEVEL jika pemain sudah mencetak rekor baru
       if (highScore !== 12340) {
         ctx.fillStyle = '#0b2249';
         ctx.fillRect(44, 19, 72, 15);
@@ -478,7 +447,6 @@
         ctx.fillText(String(bestLevel), 288, 32);
       }
 
-      // Efek kilau saat tombol ditekan
       if (pressedBtn) {
         const b = menuHitboxes.find(item => item.id === pressedBtn);
         if (b) {
@@ -487,7 +455,6 @@
         }
       }
     } else {
-      // Tampilan sementara jika gambar masih dimuat
       ctx.fillStyle = '#0b5ed7';
       ctx.fillRect(0, 0, W, H);
       ctx.fillStyle = '#ffffff';
@@ -507,7 +474,7 @@
     if (keys['ArrowUp'] || keys['KeyW']) targetY -= speed;
     if (keys['ArrowDown'] || keys['KeyS']) targetY += speed;
 
-    targetX = Math.max(24, Math.min(W - 24, targetX));
+    targetX = Math.max(28, Math.min(W - 28, targetX));
     targetY = Math.max(50, Math.min(H - 36, targetY));
 
     player.x += (targetX - player.x) * 0.25;
@@ -522,14 +489,14 @@
       player.fireTimer = 0;
       playShoot();
       if (player.weaponLevel === 1) {
-        bullets.push({ x: player.x, y: player.y - 22, vx: 0, vy: -10, dmg: 12 });
+        bullets.push({ x: player.x, y: player.y - 26, vx: 0, vy: -10, dmg: 12, kind: 'bolt' });
       } else if (player.weaponLevel === 2) {
-        bullets.push({ x: player.x - 8, y: player.y - 18, vx: 0, vy: -10, dmg: 11 });
-        bullets.push({ x: player.x + 8, y: player.y - 18, vx: 0, vy: -10, dmg: 11 });
+        bullets.push({ x: player.x - 10, y: player.y - 22, vx: 0, vy: -10, dmg: 11, kind: 'bolt' });
+        bullets.push({ x: player.x + 10, y: player.y - 22, vx: 0, vy: -10, dmg: 11, kind: 'bolt' });
       } else {
-        bullets.push({ x: player.x, y: player.y - 24, vx: 0, vy: -11, dmg: 12 });
-        bullets.push({ x: player.x - 12, y: player.y - 14, vx: -1.4, vy: -10, dmg: 10 });
-        bullets.push({ x: player.x + 12, y: player.y - 14, vx: 1.4, vy: -10, dmg: 10 });
+        bullets.push({ x: player.x, y: player.y - 28, vx: 0, vy: -11, dmg: 14, kind: 'missile' });
+        bullets.push({ x: player.x - 14, y: player.y - 16, vx: -1.3, vy: -10, dmg: 10, kind: 'bolt' });
+        bullets.push({ x: player.x + 14, y: player.y - 16, vx: 1.3, vy: -10, dmg: 10, kind: 'bolt' });
       }
     }
 
@@ -538,39 +505,42 @@
     if (!boss && enemiesDefeatedInLevel >= 12 + level * 4) {
       boss = {
         x: W / 2,
-        y: -60,
-        targetY: 95,
+        y: -70,
+        targetY: 105,
         hp: (280 + level * 140) * diffMult,
         maxHp: (280 + level * 140) * diffMult,
         dir: 1,
         shootTimer: 0
       };
     } else if (!boss && frame % Math.max(24, Math.floor(54 - level * 3)) === 0) {
-      const type = Math.random() < 0.25 ? 'HEAVY' : 'FIGHTER';
+      const pool = ['enGreen', 'enYellow', 'enStealth', 'enBat', 'enUfo'];
+      const kind = pool[Math.floor(Math.random() * pool.length)];
+      const isHeavy = kind === 'enStealth' || kind === 'enUfo';
       enemies.push({
-        x: 30 + Math.random() * (W - 60),
-        y: -30,
-        type,
-        hp: (type === 'HEAVY' ? 45 : 18) * diffMult,
-        vy: (type === 'HEAVY' ? 1.5 : 2.5 + Math.random() * 1.2),
-        vx: (Math.random() - 0.5) * 1.4,
+        x: 32 + Math.random() * (W - 64),
+        y: -35,
+        kind,
+        isHeavy,
+        hp: (isHeavy ? 42 : 20) * diffMult,
+        vy: isHeavy ? 1.7 : 2.5 + Math.random() * 1.1,
+        vx: (Math.random() - 0.5) * 1.5,
         shootTimer: Math.floor(Math.random() * 50)
       });
     }
 
     bullets.forEach(b => { b.x += b.vx; b.y += b.vy; });
-    bullets = bullets.filter(b => b.y > -20 && b.x > -20 && b.x < W + 20);
+    bullets = bullets.filter(b => b.y > -25 && b.x > -20 && b.x < W + 20);
 
     enemies.forEach(en => {
       en.x += en.vx;
       en.y += en.vy;
-      if (en.x < 24 || en.x > W - 24) en.vx *= -1;
+      if (en.x < 26 || en.x > W - 26) en.vx *= -1;
       en.shootTimer++;
       if (en.shootTimer >= Math.max(45, 95 - level * 5)) {
         en.shootTimer = 0;
         const ang = Math.atan2(player.y - en.y, player.x - en.x);
         const spd = 3.2 * diffMult;
-        enemyBullets.push({ x: en.x, y: en.y + 12, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd });
+        enemyBullets.push({ x: en.x, y: en.y + 14, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd });
       }
     });
 
@@ -578,14 +548,14 @@
       if (boss.y < boss.targetY) boss.y += 1.5;
       else {
         boss.x += boss.dir * (1.4 + level * 0.15);
-        if (boss.x < 65 || boss.x > W - 65) boss.dir *= -1;
+        if (boss.x < 70 || boss.x > W - 70) boss.dir *= -1;
       }
       boss.shootTimer++;
       if (boss.shootTimer % 38 === 0) {
         for (let a = -2; a <= 2; a++) {
           enemyBullets.push({
-            x: boss.x + a * 14,
-            y: boss.y + 24,
+            x: boss.x + a * 16,
+            y: boss.y + 32,
             vx: a * 0.85,
             vy: 3.4 * diffMult
           });
@@ -598,26 +568,26 @@
 
     bullets.forEach(b => {
       enemies.forEach(en => {
-        if (Math.abs(b.x - en.x) < 20 && Math.abs(b.y - en.y) < 20) {
+        if (Math.abs(b.x - en.x) < 22 && Math.abs(b.y - en.y) < 22) {
           en.hp -= b.dmg;
           b.y = -999;
-          spawnExplosion(b.x, b.y, '#38bdf8', 4);
+          spawnExplosion(b.x, b.y, 18);
         }
       });
-      if (boss && Math.abs(b.x - boss.x) < 48 && Math.abs(b.y - boss.y) < 28) {
+      if (boss && Math.abs(b.x - boss.x) < 52 && Math.abs(b.y - boss.y) < 42) {
         boss.hp -= b.dmg;
         b.y = -999;
-        spawnExplosion(b.x, b.y, '#facc15', 5);
+        spawnExplosion(b.x, b.y, 22);
       }
     });
 
     enemies = enemies.filter(en => {
       if (en.hp <= 0) {
         playExplosion();
-        spawnExplosion(en.x, en.y, '#ff8800', 14);
-        score += en.type === 'HEAVY' ? 300 : 120;
+        spawnExplosion(en.x, en.y, en.isHeavy ? 52 : 38);
+        score += en.isHeavy ? 300 : 120;
         enemiesDefeatedInLevel++;
-        if (Math.random() < 0.22) {
+        if (Math.random() < 0.24) {
           const types = ['P', 'S', 'H', 'B'];
           powerups.push({
             x: en.x,
@@ -627,13 +597,13 @@
         }
         return false;
       }
-      return en.y < H + 40;
+      return en.y < H + 45;
     });
 
     if (boss && boss.hp <= 0) {
       playBomb();
-      screenShake = 20;
-      spawnExplosion(boss.x, boss.y, '#facc15', 35);
+      screenShake = 22;
+      spawnExplosion(boss.x, boss.y, 110);
       score += 1500 * level;
       boss = null;
       level++;
@@ -645,7 +615,7 @@
 
     powerups.forEach(p => { p.y += 2; });
     powerups = powerups.filter(p => {
-      if (Math.abs(p.x - player.x) < 26 && Math.abs(p.y - player.y) < 26) {
+      if (Math.abs(p.x - player.x) < 28 && Math.abs(p.y - player.y) < 28) {
         playPowerup();
         score += 150;
         if (p.type === 'P') player.weaponLevel = Math.min(3, player.weaponLevel + 1);
@@ -659,13 +629,13 @@
 
     if (player.invuln <= 0 && player.shield <= 0) {
       enemyBullets.forEach(eb => {
-        if (Math.abs(eb.x - player.x) < 12 && Math.abs(eb.y - player.y) < 14) {
+        if (Math.abs(eb.x - player.x) < 13 && Math.abs(eb.y - player.y) < 15) {
           eb.y = H + 999;
           damagePlayer(20);
         }
       });
       enemies.forEach(en => {
-        if (Math.abs(en.x - player.x) < 22 && Math.abs(en.y - player.y) < 22) {
+        if (Math.abs(en.x - player.x) < 24 && Math.abs(en.y - player.y) < 24) {
           en.hp = 0;
           damagePlayer(30);
         }
@@ -680,8 +650,8 @@
       isl.y += 1.2;
       if (isl.y > H + 60) { isl.y = -60; isl.x = 30 + Math.random() * (W - 60); }
     });
-    particles.forEach(pt => { pt.x += pt.vx; pt.y += pt.vy; pt.life--; });
-    particles = particles.filter(pt => pt.life > 0);
+    explosions.forEach(ex => { ex.timer++; });
+    explosions = explosions.filter(ex => ex.timer < ex.maxTimer);
 
     if (score > highScore) highScore = score;
     if (screenShake > 0) screenShake--;
@@ -693,7 +663,7 @@
     player.invuln = 45;
     screenShake = 12;
     playExplosion();
-    spawnExplosion(player.x, player.y, '#ef4444', 16);
+    spawnExplosion(player.x, player.y, 48);
     if (player.hp <= 0) {
       player.hp = 0;
       saveRecords();
@@ -732,88 +702,99 @@
       ctx.fill();
     });
 
-    // Peluru Pemain
+    // Peluru & Rudal Pemain
     bullets.forEach(b => {
-      ctx.fillStyle = '#fef08a';
-      ctx.fillRect(b.x - 2, b.y - 8, 4, 14);
-      ctx.fillStyle = '#38bdf8';
-      ctx.fillRect(b.x - 1, b.y - 6, 2, 10);
+      const drawn = b.kind === 'missile'
+        ? drawSprite('missile', b.x, b.y, 12, 26, false)
+        : drawSprite('boltBlue', b.x, b.y, 10, 20, false);
+      if (!drawn) {
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillRect(b.x - 2, b.y - 8, 4, 14);
+      }
     });
 
-    // Pesawat Pemain
+    // Pesawat Pemain (dari sprites.png)
     if (player.invuln % 6 < 4) {
-      drawDetailedJet(player.x, player.y, 1.0, true);
+      const drawn = drawSprite('player', player.x, player.y, 64, 68, false);
+      if (!drawn) {
+        ctx.fillStyle = '#e2e8f0';
+        ctx.fillRect(player.x - 12, player.y - 16, 24, 32);
+      }
+      if (player.shield > 0) {
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, 36 + Math.sin(frame * 0.2) * 2, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
 
-    // Musuh
+    // Musuh (dari sprites.png, diputar menghadap ke bawah)
     enemies.forEach(en => {
-      ctx.save();
-      ctx.translate(en.x, en.y);
-      ctx.rotate(Math.PI);
-      drawDetailedJet(0, 0, en.type === 'HEAVY' ? 1.25 : 0.85, false);
-      ctx.restore();
+      const sz = en.isHeavy ? 48 : 38;
+      const flip = en.kind !== 'enUfo';
+      const drawn = drawSprite(en.kind, en.x, en.y, sz, sz, flip);
+      if (!drawn) {
+        ctx.fillStyle = '#ef4444';
+        ctx.fillRect(en.x - 14, en.y - 14, 28, 28);
+      }
     });
 
-    // Bos Kapal Induk Udara
+    // Bos Kapal Induk Raksasa (dari sprites.png)
     if (boss) {
-      ctx.save();
-      ctx.translate(boss.x, boss.y);
-      ctx.fillStyle = '#0f172a';
-      ctx.fillRect(-52, -25, 104, 50);
-      ctx.fillStyle = '#334155';
-      ctx.fillRect(-48, -22, 96, 44);
-      ctx.fillStyle = '#dc2626';
-      ctx.fillRect(-42, -10, 84, 18);
-      ctx.fillStyle = '#facc15';
-      ctx.fillRect(-14, -18, 28, 36);
+      const drawn = drawSprite('boss', boss.x, boss.y, 118, 128, true);
+      if (!drawn) {
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(boss.x - 50, boss.y - 30, 100, 60);
+      }
       // Bar HP Bos
       ctx.fillStyle = '#0f172a';
-      ctx.fillRect(-45, -36, 90, 8);
+      ctx.fillRect(boss.x - 50, boss.y - 68, 100, 8);
       ctx.fillStyle = '#ef4444';
-      ctx.fillRect(-44, -35, 88 * Math.max(0, boss.hp / boss.maxHp), 6);
-      ctx.restore();
+      ctx.fillRect(boss.x - 49, boss.y - 67, 98 * Math.max(0, boss.hp / boss.maxHp), 6);
     }
 
     // Peluru Musuh
     enemyBullets.forEach(eb => {
-      ctx.fillStyle = '#ef4444';
-      ctx.beginPath();
-      ctx.arc(eb.x, eb.y, 4.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#fef08a';
-      ctx.beginPath();
-      ctx.arc(eb.x, eb.y, 2, 0, Math.PI * 2);
-      ctx.fill();
+      const drawn = drawSprite('boltRed', eb.x, eb.y, 10, 18, true);
+      if (!drawn) {
+        ctx.fillStyle = '#ef4444';
+        ctx.beginPath();
+        ctx.arc(eb.x, eb.y, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
     });
 
-    // Power-ups
+    // Power-ups (dari sprites.png)
     powerups.forEach(p => {
-      const cols = { P: '#f59e0b', S: '#0ea5e9', H: '#22c55e', B: '#ef4444' };
-      ctx.fillStyle = cols[p.type];
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 12, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 13px Courier New';
-      ctx.textAlign = 'center';
-      ctx.fillText(p.type, p.x, p.y + 4);
+      const mapKey = { P: 'powP', S: 'powS', H: 'powH', B: 'powB' };
+      const drawn = drawSprite(mapKey[p.type], p.x, p.y, 26, 26, false);
+      if (!drawn) {
+        ctx.fillStyle = '#facc15';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 12, 0, Math.PI * 2);
+        ctx.fill();
+      }
     });
 
-    // Awan
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+    // Awan tipis di atas
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
     clouds.forEach(c => {
       ctx.beginPath();
       ctx.arc(c.x, c.y, c.w * 0.4, 0, Math.PI * 2);
       ctx.fill();
     });
 
-    // Partikel Ledakan
-    particles.forEach(pt => {
-      ctx.fillStyle = pt.color;
-      ctx.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
+    // Animasi Ledakan 5 Frame (dari sprites.png)
+    explosions.forEach(ex => {
+      const step = Math.min(4, Math.floor((ex.timer / ex.maxTimer) * 5));
+      const drawn = drawSprite(`exp${step}`, ex.x, ex.y, ex.size, ex.size, false);
+      if (!drawn) {
+        ctx.fillStyle = '#facc15';
+        ctx.beginPath();
+        ctx.arc(ex.x, ex.y, ex.size * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
     });
 
     if (flashAlpha > 0) {
@@ -923,7 +904,7 @@
       ]);
     } else if (state === 'ABOUT') {
       renderOverlayBox('TENTANG GAME', [
-        'PERANG LANGITAN v1.1',
+        'PERANG LANGITAN v1.2',
         'Arcade Air Combat Klasik',
         '',
         'Geser layar / Panah: Gerak',
