@@ -30,7 +30,7 @@
     max-width: 480px;
     max-height: 860px;
     box-shadow: 0 0 30px rgba(0, 160, 255, 0.35);
-    background: #1a66c2;
+    background: #0b5ed7;
   }
   canvas {
     display: block;
@@ -51,6 +51,16 @@
   const ctx = canvas.getContext('2d');
   const W = 360;
   const H = 640;
+
+  // Mencegah duri lancip pada garis tepi huruf
+  ctx.lineJoin = 'round';
+  ctx.miterLimit = 2;
+
+  // --- MEMUAT GAMBAR MENU ASLI ---
+  const menuImg = new Image();
+  let menuImgLoaded = false;
+  menuImg.onload = () => { menuImgLoaded = true; };
+  menuImg.src = 'menu.png';
 
   // --- AUDIO RETRO (WEB AUDIO API) ---
   let audioCtx = null;
@@ -85,8 +95,8 @@
     } catch (e) {}
   }
 
-  function playShoot() { playTone(880, 'square', 0.08, 0.06, 220); }
-  function playExplosion() { playTone(140, 'sawtooth', 0.28, 0.15, 35); }
+  function playShoot() { playTone(880, 'square', 0.08, 0.05, 220); }
+  function playExplosion() { playTone(140, 'sawtooth', 0.28, 0.14, 35); }
   function playPowerup() {
     playTone(523, 'square', 0.08, 0.1);
     setTimeout(() => playTone(659, 'square', 0.08, 0.1), 70);
@@ -107,11 +117,11 @@
   }
 
   // --- STATE GAME ---
-  // 'MENU', 'PLAYING', 'SETTINGS', 'HIGHSCORE', 'ABOUT', 'GAMEOVER'
   let state = 'MENU';
   let frame = 0;
+  let pressedBtn = null;
 
-  // --- GAMEPLAY VARIABLES ---
+  // --- VARIABEL GAMEPLAY ---
   let score = 0;
   let level = 1;
   let seaOffset = 0;
@@ -121,8 +131,6 @@
   const player = {
     x: W / 2,
     y: H - 100,
-    w: 36,
-    h: 40,
     hp: 100,
     maxHp: 100,
     weaponLevel: 1,
@@ -142,13 +150,13 @@
   let boss = null;
   let enemiesDefeatedInLevel = 0;
 
-  // --- TOMBOL MENU UTAMA ---
-  const menuButtons = [
-    { id: 'START', label: 'MULAI GAME', y: 318, h: 48, primary: true, red: false },
-    { id: 'SETTINGS', label: 'PENGATURAN', y: 374, h: 36, primary: false, red: false },
-    { id: 'HIGHSCORE', label: 'HIGH SCORE', y: 416, h: 36, primary: false, red: false },
-    { id: 'ABOUT', label: 'TENTANG GAME', y: 458, h: 36, primary: false, red: false },
-    { id: 'EXIT', label: 'KELUAR', y: 500, h: 36, primary: false, red: true }
+  // Area tombol sesuai posisi pada menu.png (skala 360x640)
+  const menuHitboxes = [
+    { id: 'START', x: 58, y: 318, w: 244, h: 52 },
+    { id: 'SETTINGS', x: 80, y: 374, w: 200, h: 38 },
+    { id: 'HIGHSCORE', x: 80, y: 416, w: 200, h: 38 },
+    { id: 'ABOUT', x: 80, y: 458, w: 200, h: 38 },
+    { id: 'EXIT', x: 80, y: 500, w: 200, h: 38 }
   ];
 
   // --- INPUT KONTROL ---
@@ -160,9 +168,7 @@
 
   window.addEventListener('keydown', e => {
     keys[e.code] = true;
-    if (state === 'PLAYING' && e.code === 'Space') {
-      triggerBomb();
-    }
+    if (state === 'PLAYING' && e.code === 'Space') triggerBomb();
   });
   window.addEventListener('keyup', e => { keys[e.code] = false; });
 
@@ -180,63 +186,56 @@
     pointerDown = true;
 
     if (state === 'MENU') {
-      for (const btn of menuButtons) {
-        const bx = btn.primary ? 56 : 78;
-        const bw = btn.primary ? W - 112 : W - 156;
-        if (pos.x >= bx && pos.x <= bx + bw && pos.y >= btn.y && pos.y <= btn.y + btn.h) {
+      for (const btn of menuHitboxes) {
+        if (pos.x >= btn.x && pos.x <= btn.x + btn.w && pos.y >= btn.y && pos.y <= btn.y + btn.h) {
+          pressedBtn = btn.id;
           playClick();
-          if (btn.id === 'START') startGame();
-          else if (btn.id === 'SETTINGS') state = 'SETTINGS';
-          else if (btn.id === 'HIGHSCORE') state = 'HIGHSCORE';
-          else if (btn.id === 'ABOUT') state = 'ABOUT';
-          else if (btn.id === 'EXIT') {
-            alert('Terima kasih telah bermain PERANG LANGITAN!');
-          }
+          setTimeout(() => {
+            pressedBtn = null;
+            if (btn.id === 'START') startGame();
+            else if (btn.id === 'SETTINGS') state = 'SETTINGS';
+            else if (btn.id === 'HIGHSCORE') state = 'HIGHSCORE';
+            else if (btn.id === 'ABOUT') state = 'ABOUT';
+            else if (btn.id === 'EXIT') alert('Terima kasih telah bermain PERANG LANGITAN!');
+          }, 110);
           return;
         }
       }
     } else if (state === 'SETTINGS') {
-      // Tombol Suara
-      if (pos.x >= 70 && pos.x <= W - 70 && pos.y >= 240 && pos.y <= 284) {
+      if (pos.x >= 65 && pos.x <= W - 65 && pos.y >= 240 && pos.y <= 284) {
         soundEnabled = !soundEnabled;
         playClick();
       }
-      // Tombol Kesulitan
-      if (pos.x >= 70 && pos.x <= W - 70 && pos.y >= 300 && pos.y <= 344) {
+      if (pos.x >= 65 && pos.x <= W - 65 && pos.y >= 300 && pos.y <= 344) {
         const diffs = ['MUDAH', 'NORMAL', 'SULIT'];
         difficulty = diffs[(diffs.indexOf(difficulty) + 1) % diffs.length];
         saveRecords();
         playClick();
       }
-      // Tombol Kembali
-      if (pos.x >= 90 && pos.x <= W - 90 && pos.y >= 460 && pos.y <= 504) {
+      if (pos.x >= 85 && pos.x <= W - 85 && pos.y >= 460 && pos.y <= 504) {
         playClick();
         state = 'MENU';
       }
     } else if (state === 'HIGHSCORE' || state === 'ABOUT') {
-      if (pos.x >= 90 && pos.x <= W - 90 && pos.y >= 460 && pos.y <= 504) {
+      if (pos.x >= 85 && pos.x <= W - 85 && pos.y >= 460 && pos.y <= 504) {
         playClick();
         state = 'MENU';
       }
     } else if (state === 'GAMEOVER') {
-      if (pos.x >= 75 && pos.x <= W - 75 && pos.y >= 380 && pos.y <= 426) {
+      if (pos.x >= 70 && pos.x <= W - 70 && pos.y >= 380 && pos.y <= 426) {
         playClick();
         startGame();
-      } else if (pos.x >= 90 && pos.x <= W - 90 && pos.y >= 440 && pos.y <= 482) {
+      } else if (pos.x >= 85 && pos.x <= W - 85 && pos.y >= 440 && pos.y <= 482) {
         playClick();
         state = 'MENU';
       }
     } else if (state === 'PLAYING') {
-      // Tombol Bom di pojok kanan bawah
       if (pos.x >= W - 64 && pos.y >= H - 64) {
         triggerBomb();
         return;
       }
-      // Double tap juga bisa aktifkan bom
       const now = Date.now();
-      if (now - lastTapTime < 260) {
-        triggerBomb();
-      }
+      if (now - lastTapTime < 260) triggerBomb();
       lastTapTime = now;
       targetX = pos.x;
       targetY = pos.y - 28;
@@ -296,8 +295,8 @@
     }
 
     islands = [
-      { x: 45, y: 120, r: 28 },
-      { x: 290, y: 380, r: 36 }
+      { x: 48, y: 120, r: 26 },
+      { x: 295, y: 390, r: 34 }
     ];
 
     state = 'PLAYING';
@@ -329,32 +328,46 @@
         vx: Math.cos(ang) * spd,
         vy: Math.sin(ang) * spd,
         life: 18 + Math.random() * 14,
-        maxLife: 32,
         color: i % 2 === 0 ? color : '#ffffff',
         size: 3 + Math.random() * 3
       });
     }
   }
 
-  // --- MENGGAMBAR ELEMEN PIXEL ART ---
-  function drawPixelJet(x, y, scale = 1, isPlayer = true, tilt = 0) {
+  // --- MENGGAMBAR PESAWAT PIXEL ART DETAIL (SAAT BERMAIN) ---
+  function drawDetailedJet(x, y, scale = 1, isPlayer = true) {
     ctx.save();
     ctx.translate(Math.round(x), Math.round(y));
     ctx.scale(scale, scale);
 
-    // Api pendorong (afterburner)
-    const flameH = 10 + Math.sin(frame * 0.6) * 4;
-    ctx.fillStyle = '#ff5500';
-    ctx.fillRect(-9, 14, 5, flameH);
-    ctx.fillRect(4, 14, 5, flameH);
-    ctx.fillStyle = '#ffee44';
-    ctx.fillRect(-8, 14, 3, flameH * 0.65);
-    ctx.fillRect(5, 14, 3, flameH * 0.65);
+    // Api pendorong
+    const flameH = 9 + Math.sin(frame * 0.7) * 4;
+    ctx.fillStyle = '#ea580c';
+    ctx.fillRect(-8, 13, 5, flameH);
+    ctx.fillRect(3, 13, 5, flameH);
+    ctx.fillStyle = '#fde047';
+    ctx.fillRect(-7, 13, 3, flameH * 0.65);
+    ctx.fillRect(4, 13, 3, flameH * 0.65);
+
+    // Bayangan sayap & garis tepi gelap
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.moveTo(0, -13);
+    ctx.lineTo(26, 8);
+    ctx.lineTo(26, 15);
+    ctx.lineTo(12, 13);
+    ctx.lineTo(13, 18);
+    ctx.lineTo(-13, 18);
+    ctx.lineTo(-12, 13);
+    ctx.lineTo(-26, 15);
+    ctx.lineTo(-26, 8);
+    ctx.closePath();
+    ctx.fill();
 
     // Sayap utama
-    ctx.fillStyle = isPlayer ? '#8fa4bd' : '#6b7280';
+    ctx.fillStyle = isPlayer ? '#cbd5e1' : '#64748b';
     ctx.beginPath();
-    ctx.moveTo(0, -10);
+    ctx.moveTo(0, -11);
     ctx.lineTo(24, 8);
     ctx.lineTo(24, 13);
     ctx.lineTo(6, 10);
@@ -364,42 +377,51 @@
     ctx.closePath();
     ctx.fill();
 
-    // Ujung sayap merah-putih
-    ctx.fillStyle = isPlayer ? '#e11d48' : '#f59e0b';
-    ctx.fillRect(-24, 8, 4, 5);
-    ctx.fillRect(20, 8, 4, 5);
+    // Ujung sayap merah/oranye
+    ctx.fillStyle = isPlayer ? '#dc2626' : '#f59e0b';
+    ctx.fillRect(-24, 8, 5, 5);
+    ctx.fillRect(19, 8, 5, 5);
+
+    // Rudal di bawah sayap
+    ctx.fillStyle = '#475569';
+    ctx.fillRect(-15, 4, 3, 10);
+    ctx.fillRect(12, 4, 3, 10);
 
     // Sayap ekor
-    ctx.fillStyle = isPlayer ? '#64748b' : '#4b5563';
+    ctx.fillStyle = isPlayer ? '#94a3b8' : '#475569';
     ctx.fillRect(-11, 12, 22, 5);
 
-    // Badan pesawat
-    ctx.fillStyle = isPlayer ? '#e2e8f0' : '#9ca3af';
-    ctx.fillRect(-5, -20, 10, 34);
-    ctx.fillStyle = isPlayer ? '#cbd5e1' : '#6b7280';
-    ctx.fillRect(-7, -6, 14, 20);
+    // Badan pesawat & intake mesin
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(-8, -8, 16, 23);
+    ctx.fillStyle = isPlayer ? '#f1f5f9' : '#94a3b8';
+    ctx.fillRect(-5, -21, 10, 35);
+    ctx.fillStyle = isPlayer ? '#cbd5e1' : '#64748b';
+    ctx.fillRect(-7, -6, 14, 19);
 
     // Hidung pesawat
-    ctx.fillStyle = isPlayer ? '#334155' : '#1f2937';
+    ctx.fillStyle = isPlayer ? '#334155' : '#1e293b';
     ctx.beginPath();
-    ctx.moveTo(0, -26);
-    ctx.lineTo(5, -18);
-    ctx.lineTo(-5, -18);
+    ctx.moveTo(0, -27);
+    ctx.lineTo(5, -19);
+    ctx.lineTo(-5, -19);
     ctx.closePath();
     ctx.fill();
 
-    // Kokpit kaca biru
-    ctx.fillStyle = isPlayer ? '#0ea5e9' : '#ef4444';
-    ctx.fillRect(-3, -13, 6, 10);
+    // Kokpit kaca biru mengkilap
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(-4, -15, 8, 12);
+    ctx.fillStyle = isPlayer ? '#0284c7' : '#dc2626';
+    ctx.fillRect(-3, -14, 6, 10);
     ctx.fillStyle = '#bae6fd';
-    ctx.fillRect(-2, -12, 2, 5);
+    ctx.fillRect(-2, -13, 2, 5);
 
     // Perisai jika aktif
     if (isPlayer && player.shield > 0) {
       ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.arc(0, 0, 28 + Math.sin(frame * 0.2) * 2, 0, Math.PI * 2);
+      ctx.arc(0, 0, 29 + Math.sin(frame * 0.2) * 2, 0, Math.PI * 2);
       ctx.stroke();
     }
 
@@ -409,6 +431,7 @@
   function drawBevelBox(x, y, w, h, bgTop, bgBot, borderCol) {
     const cut = 8;
     ctx.save();
+    ctx.lineJoin = 'round';
     ctx.beginPath();
     ctx.moveTo(x + cut, y);
     ctx.lineTo(x + w - cut, y);
@@ -429,297 +452,55 @@
     ctx.lineWidth = 2.5;
     ctx.strokeStyle = borderCol;
     ctx.stroke();
-
-    // Kilau atas
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(x + cut + 2, y + 2.5);
-    ctx.lineTo(x + w - cut - 2, y + 2.5);
-    ctx.stroke();
     ctx.restore();
   }
 
-  function drawTrophy(x, y) {
-    ctx.fillStyle = '#facc15';
-    ctx.fillRect(x - 6, y - 7, 12, 8);
-    ctx.fillRect(x - 4, y + 1, 8, 3);
-    ctx.fillRect(x - 2, y + 4, 4, 3);
-    ctx.fillRect(x - 6, y + 7, 12, 3);
-    ctx.strokeStyle = '#ca8a04';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(x - 8, y - 5, 2, 5);
-    ctx.strokeRect(x + 6, y - 5, 2, 5);
-  }
-
-  function drawStar(x, y, r, color = '#facc15') {
-    ctx.save();
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    for (let i = 0; i < 5; i++) {
-      const a1 = (i * 72 - 90) * Math.PI / 180;
-      const a2 = (i * 72 + 36 - 90) * Math.PI / 180;
-      ctx.lineTo(x + Math.cos(a1) * r, y + Math.sin(a1) * r);
-      ctx.lineTo(x + Math.cos(a2) * (r * 0.45), y + Math.sin(a2) * (r * 0.45));
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
-
-  function drawCarrier(x, y, scale = 1) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.scale(scale, scale);
-    // Lambung kapal induk
-    ctx.fillStyle = '#334155';
-    ctx.beginPath();
-    ctx.moveTo(-45, 18);
-    ctx.lineTo(35, -18);
-    ctx.lineTo(52, -8);
-    ctx.lineTo(-25, 28);
-    ctx.closePath();
-    ctx.fill();
-    // Dek landasan
-    ctx.fillStyle = '#64748b';
-    ctx.beginPath();
-    ctx.moveTo(-42, 14);
-    ctx.lineTo(34, -20);
-    ctx.lineTo(48, -11);
-    ctx.lineTo(-24, 23);
-    ctx.closePath();
-    ctx.fill();
-    // Garis landasan kuning
-    ctx.strokeStyle = '#facc15';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(-30, 15);
-    ctx.lineTo(36, -14);
-    ctx.stroke();
-    // Menara kontrol
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillRect(4, -14, 10, 12);
-    ctx.restore();
-  }
-
-  // --- RENDER MENU UTAMA (SESUAI GAMBAR REFERENSI) ---
+  // --- RENDER MENU UTAMA (MENGGUNAKAN GAMBAR ASLI menu.png) ---
   function renderMenu() {
-    // 1. Langit & Lautan Gradien
-    const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
-    skyGrad.addColorStop(0, '#0b5ed7');
-    skyGrad.addColorStop(0.45, '#38bdf8');
-    skyGrad.addColorStop(0.48, '#0284c7');
-    skyGrad.addColorStop(1, '#0369a1');
-    ctx.fillStyle = skyGrad;
-    ctx.fillRect(0, 0, W, H);
+    if (menuImgLoaded) {
+      ctx.drawImage(menuImg, 0, 0, W, H);
 
-    // 2. Radar melingkar di belakang logo
-    ctx.save();
-    ctx.strokeStyle = 'rgba(186, 230, 253, 0.35)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(W / 2, 95, 78, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(W / 2, 95, 52, 0, Math.PI * 2);
-    ctx.stroke();
-    // Garis sapuan radar berputar
-    const radAng = frame * 0.03;
-    ctx.beginPath();
-    ctx.moveTo(W / 2, 95);
-    ctx.lineTo(W / 2 + Math.cos(radAng) * 78, 95 + Math.sin(radAng) * 78);
-    ctx.stroke();
-    ctx.restore();
-
-    // 3. Awan pixel art di cakrawala
-    ctx.fillStyle = '#e0f2fe';
-    const cloudCoords = [
-      [25, 95, 45], [75, 85, 55], [270, 90, 60], [325, 105, 40],
-      [20, 255, 65], [90, 270, 50], [260, 265, 70], [330, 250, 45],
-      [25, 490, 60], [310, 470, 55]
-    ];
-    cloudCoords.forEach(([cx, cy, cw]) => {
-      ctx.beginPath();
-      ctx.arc(cx, cy, cw * 0.32, 0, Math.PI * 2);
-      ctx.arc(cx + cw * 0.25, cy - 5, cw * 0.38, 0, Math.PI * 2);
-      ctx.arc(cx + cw * 0.55, cy, cw * 0.3, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    // 4. Pulau, Tebing Radar & Kapal Induk
-    // Pulau kiri & kanan tengah
-    ctx.fillStyle = '#15803d';
-    ctx.beginPath();
-    ctx.arc(18, 345, 34, 0, Math.PI * 2);
-    ctx.arc(348, 325, 36, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Kapal induk di kanan tengah & kanan bawah
-    drawCarrier(318, 435, 0.85);
-    drawCarrier(308, 575, 1.0);
-
-    // Tebing kiri bawah + Stasiun Radar Parabola
-    ctx.fillStyle = '#78350f';
-    ctx.beginPath();
-    ctx.moveTo(0, 520);
-    ctx.lineTo(68, 545);
-    ctx.lineTo(95, 640);
-    ctx.lineTo(0, 640);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#16a34a';
-    ctx.fillRect(0, 520, 62, 12);
-    // Antena parabola
-    ctx.fillStyle = '#cbd5e1';
-    ctx.fillRect(24, 504, 14, 16);
-    ctx.beginPath();
-    ctx.arc(31, 496, 14, 0.2 * Math.PI, 1.1 * Math.PI);
-    ctx.fill();
-
-    // 5. Formasi Pesawat Tempur Tengah
-    const hoverY = Math.sin(frame * 0.06) * 4;
-    // Jejak asap pesawat
-    ctx.strokeStyle = 'rgba(255,255,255,0.65)';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(75, 200);
-    ctx.lineTo(135, 245);
-    ctx.moveTo(285, 200);
-    ctx.lineTo(225, 245);
-    ctx.stroke();
-
-    drawPixelJet(75, 198 + hoverY * 0.5, 0.62, true);
-    drawPixelJet(285, 198 + hoverY * 0.5, 0.62, true);
-    drawPixelJet(72, 282 + hoverY * 0.7, 0.55, true);
-    drawPixelJet(288, 282 + hoverY * 0.7, 0.55, true);
-    // Pesawat utama besar di tengah
-    drawPixelJet(W / 2, 245 + hoverY, 1.85, true);
-
-    // 6. HUD Atas: HIGH SCORE & BEST LEVEL
-    drawBevelBox(8, 8, 122, 34, '#1e3a8a', '#0f172a', '#38bdf8');
-    drawTrophy(24, 24);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 9px Courier New';
-    ctx.textAlign = 'left';
-    ctx.fillText('HIGH SCORE', 40, 20);
-    ctx.fillStyle = '#facc15';
-    ctx.font = 'bold 13px Courier New';
-    ctx.fillText(String(highScore).padStart(6, '0'), 40, 35);
-
-    drawBevelBox(W - 130, 8, 122, 34, '#1e3a8a', '#0f172a', '#38bdf8');
-    drawStar(W - 24, 25, 10);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 9px Courier New';
-    ctx.textAlign = 'right';
-    ctx.fillText('BEST LEVEL', W - 40, 20);
-    ctx.fillStyle = '#facc15';
-    ctx.font = 'bold 14px Courier New';
-    ctx.fillText(String(bestLevel), W - 56, 36);
-
-    // 7. Logo Judul 3D: PERANG LANGITAN
-    ctx.save();
-    ctx.textAlign = 'center';
-    // Sayap logo perak
-    ctx.fillStyle = '#cbd5e1';
-    ctx.fillRect(22, 74, 52, 8);
-    ctx.fillRect(30, 85, 44, 7);
-    ctx.fillRect(W - 74, 74, 52, 8);
-    ctx.fillRect(W - 74, 85, 44, 7);
-
-    // Teks PERANG
-    ctx.font = '900 36px Impact, Arial Black, sans-serif';
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = '#0f172a';
-    ctx.strokeText('PERANG', W / 2, 102);
-    const pGrad = ctx.createLinearGradient(0, 68, 0, 104);
-    pGrad.addColorStop(0, '#ffffff');
-    pGrad.addColorStop(1, '#94a3b8');
-    ctx.fillStyle = pGrad;
-    ctx.fillText('PERANG', W / 2, 102);
-
-    // Teks LANGITAN
-    ctx.font = '900 44px Impact, Arial Black, sans-serif';
-    ctx.lineWidth = 7;
-    ctx.strokeStyle = '#1e1b4b';
-    ctx.strokeText('LANGITAN', W / 2, 146);
-    const lGrad = ctx.createLinearGradient(0, 108, 0, 148);
-    lGrad.addColorStop(0, '#fef08a');
-    lGrad.addColorStop(0.5, '#facc15');
-    lGrad.addColorStop(1, '#ea580c');
-    ctx.fillStyle = lGrad;
-    ctx.fillText('LANGITAN', W / 2, 146);
-
-    // Emblem Bintang di bawah judul
-    ctx.fillStyle = '#dc2626';
-    ctx.fillRect(W / 2 - 68, 158, 136, 7);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(W / 2 - 55, 165, 110, 4);
-    ctx.beginPath();
-    ctx.arc(W / 2, 163, 13, 0, Math.PI * 2);
-    ctx.fillStyle = '#1e3a8a';
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = '#facc15';
-    ctx.stroke();
-    drawStar(W / 2, 163, 8);
-    ctx.restore();
-
-    // 8. Tombol Menu Arcade
-    menuButtons.forEach(btn => {
-      const bx = btn.primary ? 56 : 78;
-      const bw = btn.primary ? W - 112 : W - 156;
-      if (btn.primary) {
-        drawBevelBox(bx, btn.y, bw, btn.h, '#fde047', '#d97706', '#ffffff');
-        // Ikon segitiga Play
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.moveTo(bx + 24, btn.y + 13);
-        ctx.lineTo(bx + 42, btn.y + 24);
-        ctx.lineTo(bx + 24, btn.y + 35);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = '#0f172a';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      } else if (btn.red) {
-        drawBevelBox(bx, btn.y, bw, btn.h, '#ef4444', '#991b1b', '#fca5a5');
-      } else {
-        drawBevelBox(bx, btn.y, bw, btn.h, '#2563eb', '#1e3a8a', '#60a5fa');
+      // Perbarui angka HIGH SCORE & BEST LEVEL jika pemain sudah mencetak rekor baru
+      if (highScore !== 12340) {
+        ctx.fillStyle = '#0b2249';
+        ctx.fillRect(44, 19, 72, 15);
+        ctx.fillStyle = '#facc15';
+        ctx.font = 'bold 13px Courier New';
+        ctx.textAlign = 'left';
+        ctx.fillText(String(highScore).padStart(6, '0'), 46, 31);
+      }
+      if (bestLevel !== 5) {
+        ctx.fillStyle = '#0b2249';
+        ctx.fillRect(262, 19, 52, 16);
+        ctx.fillStyle = '#facc15';
+        ctx.font = 'bold 14px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillText(String(bestLevel), 288, 32);
       }
 
-      ctx.save();
-      ctx.textAlign = 'center';
-      ctx.font = btn.primary ? '900 20px Impact, Arial Black, sans-serif' : 'bold 15px Impact, Arial Black, sans-serif';
-      ctx.lineWidth = 3.5;
-      ctx.strokeStyle = '#0f172a';
-      const textX = btn.primary ? W / 2 + 12 : W / 2;
-      const textY = btn.y + btn.h / 2 + (btn.primary ? 7 : 5);
-      ctx.strokeText(btn.label, textX, textY);
+      // Efek kilau saat tombol ditekan
+      if (pressedBtn) {
+        const b = menuHitboxes.find(item => item.id === pressedBtn);
+        if (b) {
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
+          ctx.fillRect(b.x, b.y, b.w, b.h);
+        }
+      }
+    } else {
+      // Tampilan sementara jika gambar masih dimuat
+      ctx.fillStyle = '#0b5ed7';
+      ctx.fillRect(0, 0, W, H);
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(btn.label, textX, textY);
-      ctx.restore();
-    });
-
-    // 9. Footer: — SIAP TEMPUR ? —
-    ctx.save();
-    ctx.fillStyle = '#facc15';
-    ctx.fillRect(76, 613, 30, 3);
-    ctx.fillRect(W - 106, 613, 30, 3);
-    ctx.textAlign = 'center';
-    ctx.font = 'italic 900 16px Impact, Arial Black, sans-serif';
-    ctx.lineWidth = 3.5;
-    ctx.strokeStyle = '#0f172a';
-    ctx.strokeText('SIAP TEMPUR ?', W / 2, 620);
-    ctx.fillStyle = '#facc15';
-    ctx.fillText('SIAP TEMPUR ?', W / 2, 620);
-    ctx.restore();
+      ctx.font = 'bold 16px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText('MEMUAT PERANG LANGITAN...', W / 2, H / 2);
+    }
   }
 
   // --- UPDATE & RENDER GAMEPLAY ---
   function updateGameplay() {
     seaOffset = (seaOffset + 1.8) % 64;
 
-    // Gerak pemain (Keyboard & Touch/Mouse)
     const speed = 5.2;
     if (keys['ArrowLeft'] || keys['KeyA']) targetX -= speed;
     if (keys['ArrowRight'] || keys['KeyD']) targetX += speed;
@@ -759,8 +540,6 @@
         x: W / 2,
         y: -60,
         targetY: 95,
-        w: 96,
-        h: 54,
         hp: (280 + level * 140) * diffMult,
         maxHp: (280 + level * 140) * diffMult,
         dir: 1,
@@ -779,11 +558,9 @@
       });
     }
 
-    // Update Peluru Pemain
     bullets.forEach(b => { b.x += b.vx; b.y += b.vy; });
     bullets = bullets.filter(b => b.y > -20 && b.x > -20 && b.x < W + 20);
 
-    // Update Musuh
     enemies.forEach(en => {
       en.x += en.vx;
       en.y += en.vy;
@@ -797,7 +574,6 @@
       }
     });
 
-    // Update Bos
     if (boss) {
       if (boss.y < boss.targetY) boss.y += 1.5;
       else {
@@ -817,11 +593,9 @@
       }
     }
 
-    // Update Peluru Musuh
     enemyBullets.forEach(eb => { eb.x += eb.vx; eb.y += eb.vy; });
     enemyBullets = enemyBullets.filter(eb => eb.y < H + 20 && eb.y > -20 && eb.x > -20 && eb.x < W + 20);
 
-    // Deteksi Tabrakan Peluru Pemain -> Musuh & Bos
     bullets.forEach(b => {
       enemies.forEach(en => {
         if (Math.abs(b.x - en.x) < 20 && Math.abs(b.y - en.y) < 20) {
@@ -837,7 +611,6 @@
       }
     });
 
-    // Musuh Hancur
     enemies = enemies.filter(en => {
       if (en.hp <= 0) {
         playExplosion();
@@ -857,7 +630,6 @@
       return en.y < H + 40;
     });
 
-    // Bos Hancur -> Naik Level
     if (boss && boss.hp <= 0) {
       playBomb();
       screenShake = 20;
@@ -871,7 +643,6 @@
       saveRecords();
     }
 
-    // Power-up jatuh
     powerups.forEach(p => { p.y += 2; });
     powerups = powerups.filter(p => {
       if (Math.abs(p.x - player.x) < 26 && Math.abs(p.y - player.y) < 26) {
@@ -886,7 +657,6 @@
       return p.y < H + 20;
     });
 
-    // Tabrakan ke Pemain
     if (player.invuln <= 0 && player.shield <= 0) {
       enemyBullets.forEach(eb => {
         if (Math.abs(eb.x - player.x) < 12 && Math.abs(eb.y - player.y) < 14) {
@@ -902,7 +672,6 @@
       });
     }
 
-    // Update Awan, Pulau & Partikel
     clouds.forEach(c => {
       c.y += c.speed;
       if (c.y > H + 40) { c.y = -40; c.x = Math.random() * W; }
@@ -934,6 +703,9 @@
 
   function renderGameplay() {
     ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+
     if (screenShake > 0) {
       ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
     }
@@ -968,9 +740,9 @@
       ctx.fillRect(b.x - 1, b.y - 6, 2, 10);
     });
 
-    // Pesawat Pemain (berkedip saat invuln)
+    // Pesawat Pemain
     if (player.invuln % 6 < 4) {
-      drawPixelJet(player.x, player.y, 1.0, true);
+      drawDetailedJet(player.x, player.y, 1.0, true);
     }
 
     // Musuh
@@ -978,7 +750,7 @@
       ctx.save();
       ctx.translate(en.x, en.y);
       ctx.rotate(Math.PI);
-      drawPixelJet(0, 0, en.type === 'HEAVY' ? 1.25 : 0.85, false);
+      drawDetailedJet(0, 0, en.type === 'HEAVY' ? 1.25 : 0.85, false);
       ctx.restore();
     });
 
@@ -986,17 +758,19 @@
     if (boss) {
       ctx.save();
       ctx.translate(boss.x, boss.y);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(-52, -25, 104, 50);
       ctx.fillStyle = '#334155';
       ctx.fillRect(-48, -22, 96, 44);
-      ctx.fillStyle = '#ef4444';
+      ctx.fillStyle = '#dc2626';
       ctx.fillRect(-42, -10, 84, 18);
       ctx.fillStyle = '#facc15';
       ctx.fillRect(-14, -18, 28, 36);
       // Bar HP Bos
       ctx.fillStyle = '#0f172a';
-      ctx.fillRect(-45, -34, 90, 7);
+      ctx.fillRect(-45, -36, 90, 8);
       ctx.fillStyle = '#ef4444';
-      ctx.fillRect(-44, -33, 88 * Math.max(0, boss.hp / boss.maxHp), 5);
+      ctx.fillRect(-44, -35, 88 * Math.max(0, boss.hp / boss.maxHp), 6);
       ctx.restore();
     }
 
@@ -1028,7 +802,7 @@
       ctx.fillText(p.type, p.x, p.y + 4);
     });
 
-    // Awan tipis di atas
+    // Awan
     ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
     clouds.forEach(c => {
       ctx.beginPath();
@@ -1042,14 +816,13 @@
       ctx.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
     });
 
-    // Kilatan Bom
     if (flashAlpha > 0) {
       ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`;
       ctx.fillRect(0, 0, W, H);
     }
 
     // HUD Gameplay
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.82)';
     ctx.fillRect(0, 0, W, 38);
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 12px Courier New';
@@ -1058,7 +831,6 @@
     ctx.fillStyle = '#facc15';
     ctx.fillText(`LEVEL ${level}`, 10, 31);
 
-    // HP Bar
     ctx.fillStyle = '#334155';
     ctx.fillRect(W - 120, 10, 110, 12);
     ctx.fillStyle = player.hp > 35 ? '#22c55e' : '#ef4444';
@@ -1068,7 +840,7 @@
     ctx.textAlign = 'right';
     ctx.fillText(`SENJATA LV.${player.weaponLevel}`, W - 10, 33);
 
-    // Tombol Bom di Pojok Kanan Bawah
+    // Tombol Bom
     drawBevelBox(W - 58, H - 54, 48, 44, '#ef4444', '#7f1d1d', '#fca5a5');
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 11px Courier New';
@@ -1084,7 +856,11 @@
   // --- RENDER SUB-MENU & GAME OVER ---
   function renderOverlayBox(title, lines, isGameOver = false) {
     renderMenu();
-    ctx.fillStyle = 'rgba(7, 19, 38, 0.82)';
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+
+    ctx.fillStyle = 'rgba(7, 19, 38, 0.84)';
     ctx.fillRect(0, 0, W, H);
 
     drawBevelBox(28, 140, W - 56, 370, '#1e3a8a', '#0f172a', '#38bdf8');
@@ -1125,14 +901,14 @@
       ctx.font = 'bold 16px Impact, Arial Black, sans-serif';
       ctx.fillText('KEMBALI', W / 2, 488);
     }
+    ctx.restore();
   }
 
   // --- LOOP UTAMA ---
   function loop() {
     frame++;
-    if (state === 'MENU') {
-      renderMenu();
-    } else if (state === 'PLAYING') {
+    if (state === 'MENU') renderMenu();
+    else if (state === 'PLAYING') {
       updateGameplay();
       renderGameplay();
     } else if (state === 'SETTINGS') {
@@ -1147,7 +923,7 @@
       ]);
     } else if (state === 'ABOUT') {
       renderOverlayBox('TENTANG GAME', [
-        'PERANG LANGITAN v1.0',
+        'PERANG LANGITAN v1.1',
         'Arcade Air Combat Klasik',
         '',
         'Geser layar / Panah: Gerak',
@@ -1161,7 +937,6 @@
         `LEVEL DICAPAI : ${level}`
       ], true);
     }
-
     requestAnimationFrame(loop);
   }
 
